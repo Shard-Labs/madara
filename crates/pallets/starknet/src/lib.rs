@@ -405,7 +405,6 @@ pub mod pallet {
         pub fn invoke(origin: OriginFor<T>, transaction: InvokeTransaction) -> DispatchResult {
             // This ensures that the function can only be called via unsigned transaction.
             ensure_none(origin)?;
-
             // Check if contract is deployed
             ensure!(ContractClassHashes::<T>::contains_key(transaction.sender_address), Error::<T>::AccountNotDeployed);
 
@@ -416,7 +415,7 @@ pub mod pallet {
             let transaction: Transaction = transaction.into();
             let call_info = transaction.execute(
                 &mut BlockifierStateAdapter::<T>::default(),
-                block,
+                block.clone(),
                 TxType::Invoke,
                 None,
                 fee_token_address,
@@ -446,6 +445,8 @@ pub mod pallet {
                         transaction_hash: transaction.hash,
                         tx_type: TxType::Invoke,
                         actual_fee: U256::from(actual_fee.0),
+                        block_hash: U256::from(block.header().hash().0),
+                        block_number: block.header().block_number.as_u64(),
                     }
                 }
                 Err(e) => {
@@ -503,7 +504,7 @@ pub mod pallet {
             // Execute transaction
             let call_info = transaction.execute(
                 &mut BlockifierStateAdapter::<T>::default(),
-                block,
+                block.clone(),
                 TxType::Declare,
                 Some(contract_class),
                 fee_token_address,
@@ -532,6 +533,8 @@ pub mod pallet {
                         events: BoundedVec::try_from(events).map_err(|_| Error::<T>::ReachedBoundedVecLimit)?,
                         transaction_hash: transaction.hash,
                         tx_type: TxType::Declare,
+                        block_hash: U256::from(block.header().hash().0),
+                        block_number: block.header().block_number.as_u64(),
                         actual_fee: U256::from(actual_fee.0),
                     }
                 }
@@ -585,7 +588,7 @@ pub mod pallet {
             // Execute transaction
             let call_info = transaction.execute(
                 &mut BlockifierStateAdapter::<T>::default(),
-                block,
+                block.clone(),
                 TxType::DeployAccount,
                 None,
                 fee_token_address,
@@ -614,6 +617,8 @@ pub mod pallet {
                         events: BoundedVec::try_from(events).map_err(|_| Error::<T>::ReachedBoundedVecLimit)?,
                         transaction_hash: transaction.hash,
                         tx_type: TxType::DeployAccount,
+                        block_hash: U256::from(block.header().hash().0),
+                        block_number: block.header().block_number.as_u64(),
                         actual_fee: U256::from(actual_fee.0),
                     }
                 }
