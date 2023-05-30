@@ -4,11 +4,12 @@ use std::sync::Arc;
 use mp_starknet::block::Block as StarknetBlock;
 use mp_starknet::execution::types::{ClassHashWrapper, ContractAddressWrapper, ContractClassWrapper};
 use mp_starknet::storage::{
-    PALLET_STARKNET, STARKNET_CONTRACT_CLASS, STARKNET_CONTRACT_CLASS_HASH, STARKNET_CURRENT_BLOCK,
+    PALLET_STARKNET, STARKNET_CONTRACT_CLASS, STARKNET_CONTRACT_CLASS_HASH, STARKNET_CURRENT_BLOCK, STARKNET_NONCE,
 };
+use pallet_starknet::types::NonceWrapper;
 // Substrate
 use sc_client_api::backend::{Backend, StorageProvider};
-use scale_codec::Decode;
+use scale_codec::{Decode, Encode};
 use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::Block as BlockT;
 use sp_storage::StorageKey;
@@ -41,6 +42,9 @@ where
         }
         None
     }
+    fn encode_storage_key<T: Encode>(&self, key: &T) -> Vec<u8> {
+        Encode::encode(key)
+    }
 }
 
 impl<B, C, BE> StorageOverride<B> for SchemaV1Override<B, C, BE>
@@ -62,17 +66,8 @@ where
         block_hash: <B as BlockT>::Hash,
         address: ContractAddressWrapper,
     ) -> Option<ContractClassWrapper> {
-        let storage_contract_class_hash_prefix = storage_prefix_build(PALLET_STARKNET, STARKNET_CONTRACT_CLASS_HASH);
-        let contract_class_hash: [u8; 32] = self.query_storage::<ClassHashWrapper>(
-            block_hash,
-            &StorageKey(storage_key_build(storage_contract_class_hash_prefix, &address[..])),
-        )?;
-
-        let storage_contract_class_prefix = storage_prefix_build(PALLET_STARKNET, STARKNET_CONTRACT_CLASS);
-        self.query_storage::<ContractClassWrapper>(
-            block_hash,
-            &StorageKey(storage_key_build(storage_contract_class_prefix, &contract_class_hash[..])),
-        )
+        let class_hash = self.contract_class_hash_by_address(block_hash, address)?;
+        self.contract_class_by_class_hash(block_hash, class_hash)
     }
 
     fn contract_class_hash_by_address(
@@ -83,7 +78,7 @@ where
         let storage_contract_class_hash_prefix = storage_prefix_build(PALLET_STARKNET, STARKNET_CONTRACT_CLASS_HASH);
         self.query_storage::<ClassHashWrapper>(
             block_hash,
-            &StorageKey(storage_key_build(storage_contract_class_hash_prefix, &address[..])),
+            &StorageKey(storage_key_build(storage_contract_class_hash_prefix, &self.encode_storage_key(&address))),
         )
     }
 
@@ -95,7 +90,23 @@ where
         let storage_contract_class_prefix = storage_prefix_build(PALLET_STARKNET, STARKNET_CONTRACT_CLASS);
         self.query_storage::<ContractClassWrapper>(
             block_hash,
-            &StorageKey(storage_key_build(storage_contract_class_prefix, &contract_class_hash[..])),
+            &StorageKey(storage_key_build(
+                storage_contract_class_prefix,
+                &self.encode_storage_key(&contract_class_hash),
+            )),
         )
+    }
+
+    fn nonce(&self, block_hash: <B as BlockT>::Hash, address: ContractAddressWrapper) -> Option<NonceWrapper> {
+        let storage_nonce_prefix = storage_prefix_build(PALLET_STARKNET, STARKNET_NONCE);
+        let nonce = self.query_storage::<NonceWrapper>(
+            block_hash,
+            &StorageKey(storage_key_build(storage_nonce_prefix, &self.encode_storage_key(&address))),
+        );
+
+        match nonce {
+            Some(nonce) => Some(nonce),
+            None => Some(NonceWrapper::default()),
+        }
     }
 }

@@ -25,19 +25,23 @@ pub use frame_support::weights::constants::{
 pub use frame_support::weights::{IdentityFee, Weight};
 pub use frame_support::{construct_runtime, parameter_types, StorageValue};
 pub use frame_system::Call as SystemCall;
+use mp_starknet::crypto::hash::Hasher;
 use mp_starknet::execution::types::{
-    ClassHashWrapper, ContractAddressWrapper, ContractClassWrapper, StorageKeyWrapper,
+    ClassHashWrapper, ContractAddressWrapper, ContractClassWrapper, Felt252Wrapper, StorageKeyWrapper,
+};
+use mp_starknet::transaction::types::{
+    DeclareTransaction, DeployAccountTransaction, InvokeTransaction, Transaction, TxType,
 };
 pub use pallet_balances::Call as BalancesCall;
 use pallet_grandpa::{fg_primitives, AuthorityId as GrandpaId, AuthorityList as GrandpaAuthorityList};
 /// Import the StarkNet pallet.
 pub use pallet_starknet;
-use pallet_starknet::types::StarkFeltWrapper;
+use pallet_starknet::types::NonceWrapper;
 pub use pallet_timestamp::Call as TimestampCall;
 use sp_api::impl_runtime_apis;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_core::crypto::KeyTypeId;
-use sp_core::{OpaqueMetadata, H256, U256};
+use sp_core::OpaqueMetadata;
 use sp_runtime::traits::{BlakeTwo256, Block as BlockT, NumberFor};
 use sp_runtime::transaction_validity::{TransactionSource, TransactionValidity};
 #[cfg(any(feature = "std", test))]
@@ -279,7 +283,7 @@ impl_runtime_apis! {
     }
 
     impl pallet_starknet::runtime_api::StarknetRuntimeApi<Block> for Runtime {
-        fn current_block_hash() -> H256 {
+        fn current_block_hash() -> Felt252Wrapper {
             Starknet::current_block_hash()
         }
 
@@ -287,12 +291,16 @@ impl_runtime_apis! {
             Starknet::current_block()
         }
 
-        fn get_storage_at(address: ContractAddressWrapper, key: StorageKeyWrapper) -> Result<StarkFeltWrapper, DispatchError> {
+        fn get_storage_at(address: ContractAddressWrapper, key: StorageKeyWrapper) -> Result<Felt252Wrapper, DispatchError> {
             Starknet::get_storage_at(address, key)
         }
 
-        fn call(address: ContractAddressWrapper, function_selector: H256, calldata: Vec<U256>) -> Result<Vec<StarkFeltWrapper>, DispatchError> {
+        fn call(address: ContractAddressWrapper, function_selector: Felt252Wrapper, calldata: Vec<Felt252Wrapper>) -> Result<Vec<Felt252Wrapper>, DispatchError> {
             Starknet::call_contract(address, function_selector, calldata)
+        }
+
+        fn nonce(address: ContractAddressWrapper) -> NonceWrapper {
+            Starknet::nonce(address)
         }
 
         fn contract_class_hash_by_address(address: ContractAddressWrapper) -> Option<ClassHashWrapper> {
@@ -305,6 +313,37 @@ impl_runtime_apis! {
 
         fn chain_id() -> u128 {
             Starknet::chain_id()
+        }
+
+        fn estimate_fee(transaction: Transaction) -> Result<(u64, u64), DispatchError> {
+            Starknet::estimate_fee(transaction)
+        }
+
+        fn get_hasher() -> Hasher {
+            Starknet::get_system_hash().into()
+        }
+    }
+
+    impl pallet_starknet::runtime_api::ConvertTransactionRuntimeApi<Block> for Runtime {
+        fn convert_transaction(transaction: Transaction, tx_type: TxType) -> Result<UncheckedExtrinsic, DispatchError> {
+            let call = match tx_type {
+                TxType::DeployAccount => {
+                    let tx = DeployAccountTransaction::try_from(transaction).map_err(|_| DispatchError::Other("failed to convert transaction to DeployAccountTransaction"))?;
+                    pallet_starknet::Call::deploy_account{transaction: tx}
+                },
+                TxType::Invoke => {
+                    let tx = InvokeTransaction::try_from(transaction).map_err(|_| DispatchError::Other("failed to convert transaction to InvokeTransaction"))?;
+                    pallet_starknet::Call::invoke{transaction: tx}
+                },
+                TxType::Declare => {
+                    let tx = DeclareTransaction::try_from(transaction).map_err(|_| DispatchError::Other("failed to convert transaction to DeclareTransaction"))?;
+                    pallet_starknet::Call::declare{transaction: tx}
+                },
+                TxType::L1Handler => {
+                    pallet_starknet::Call::consume_l1_message{transaction}
+                }
+            };
+            Ok(UncheckedExtrinsic::new_unsigned(call.into()))
         }
     }
 

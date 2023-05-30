@@ -17,7 +17,7 @@ use blockifier::transaction::objects::AccountTransactionContext;
 use blockifier::transaction::transaction_utils::verify_no_calls_to_other_contracts;
 use blockifier::transaction::transactions::Executable;
 use frame_support::BoundedVec;
-use sp_core::{H256, U256};
+use sp_core::U256;
 use starknet_api::api_core::{ContractAddress as StarknetContractAddress, EntryPointSelector, Nonce};
 use starknet_api::deprecated_contract_class::EntryPointType;
 use starknet_api::hash::{StarkFelt, StarkHash};
@@ -33,9 +33,8 @@ use self::types::{
     TransactionExecutionInfoWrapper, TransactionExecutionResultWrapper, TransactionReceiptWrapper,
     TransactionValidationErrorWrapper, TransactionValidationResultWrapper, TxType,
 };
-use crate::block::serialize::SerializeBlockContext;
 use crate::block::Block as StarknetBlock;
-use crate::execution::types::{CallEntryPointWrapper, ContractAddressWrapper, ContractClassWrapper};
+use crate::execution::types::{CallEntryPointWrapper, ContractAddressWrapper, ContractClassWrapper, Felt252Wrapper};
 use crate::fees::{self, charge_fee};
 use crate::state::StateChanges;
 
@@ -48,8 +47,8 @@ impl EventWrapper {
     /// * `data` - Event data.
     /// * `from_address` - Contract Address where the event was emitted from.
     pub fn new(
-        keys: BoundedVec<H256, MaxArraySize>,
-        data: BoundedVec<H256, MaxArraySize>,
+        keys: BoundedVec<Felt252Wrapper, MaxArraySize>,
+        data: BoundedVec<Felt252Wrapper, MaxArraySize>,
         from_address: ContractAddressWrapper,
     ) -> Self {
         Self { keys, data, from_address }
@@ -73,8 +72,8 @@ impl EventWrapper {
 /// Builder pattern for `EventWrapper`.
 #[derive(Default)]
 pub struct EventBuilder {
-    keys: vec::Vec<H256>,
-    data: vec::Vec<H256>,
+    keys: vec::Vec<Felt252Wrapper>,
+    data: vec::Vec<Felt252Wrapper>,
     from_address: Option<StarknetContractAddress>,
 }
 
@@ -84,7 +83,7 @@ impl EventBuilder {
     /// # Arguments
     ///
     /// * `keys` - Event keys.
-    pub fn with_keys(mut self, keys: vec::Vec<H256>) -> Self {
+    pub fn with_keys(mut self, keys: vec::Vec<Felt252Wrapper>) -> Self {
         self.keys = keys;
         self
     }
@@ -94,7 +93,7 @@ impl EventBuilder {
     /// # Arguments
     ///
     /// * `data` - Event data.
-    pub fn with_data(mut self, data: vec::Vec<H256>) -> Self {
+    pub fn with_data(mut self, data: vec::Vec<Felt252Wrapper>) -> Self {
         self.data = data;
         self
     }
@@ -115,8 +114,10 @@ impl EventBuilder {
     ///
     /// * `event_content` - Event content retrieved from the `CallInfo`.
     pub fn with_event_content(mut self, event_content: EventContent) -> Self {
-        self.keys = event_content.keys.iter().map(|k| H256::from_slice(k.0.bytes())).collect::<vec::Vec<H256>>();
-        self.data = event_content.data.0.iter().map(|d| H256::from_slice(d.bytes())).collect::<vec::Vec<H256>>();
+        // TODO: what's the proper why to handle errors in a map? We should return Return<Self,
+        // Felt252WrapperError> instead?
+        self.keys = event_content.keys.iter().map(|k| k.0.into()).collect::<vec::Vec<Felt252Wrapper>>();
+        self.data = event_content.data.0.iter().map(|d| Felt252Wrapper::from(*d)).collect::<vec::Vec<Felt252Wrapper>>();
         self
     }
 
@@ -139,13 +140,11 @@ impl EventBuilder {
 
 impl Default for EventWrapper {
     fn default() -> Self {
-        let one = H256::from_slice(&[
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-        ]);
+        let one = Felt252Wrapper::ONE;
         Self {
             keys: BoundedVec::try_from(vec![one, one]).unwrap(),
             data: BoundedVec::try_from(vec![one, one]).unwrap(),
-            from_address: ContractAddressWrapper::from(one),
+            from_address: one,
         }
     }
 }
@@ -165,8 +164,8 @@ impl TryInto<TransactionReceiptWrapper> for &TransactionReceipt {
             .collect();
 
         Ok(TransactionReceiptWrapper {
-            transaction_hash: H256::from_slice(self.transaction_hash.0.bytes()),
-            actual_fee: U256::from(self.output.actual_fee().0),
+            transaction_hash: self.transaction_hash.0.into(),
+            actual_fee: U256::from(self.output.actual_fee().0).try_into().expect("Actual fee too large for felt252."),
             tx_type: match self.output {
                 TransactionOutput::Declare(_) => TxType::Declare,
                 TransactionOutput::DeployAccount(_) => TxType::DeployAccount,
@@ -174,7 +173,7 @@ impl TryInto<TransactionReceiptWrapper> for &TransactionReceipt {
                 TransactionOutput::L1Handler(_) => TxType::L1Handler,
                 _ => TxType::Invoke,
             },
-            block_hash: U256::from(self.block_hash.0.0),
+            block_hash: self.block_hash.0.into(),
             block_number: self.block_number.0,
             events: BoundedVec::try_from(_events?).map_err(|_| EventError::TooManyEvents)?,
         })
@@ -189,14 +188,14 @@ impl TryInto<DeployAccountTransaction> for &Transaction {
         let entrypoint: CallEntryPoint = self.call_entrypoint.clone().try_into()?;
 
         Ok(DeployAccountTransaction {
-            transaction_hash: TransactionHash(StarkFelt::new(self.hash.0)?),
+            transaction_hash: TransactionHash(StarkFelt::new(self.hash.into())?),
             max_fee: Fee(2),
             version: TransactionVersion(StarkFelt::new(U256::from(self.version).into())?),
             signature: TransactionSignature(
-                self.signature.clone().into_inner().iter().map(|x| StarkFelt::new(x.0).unwrap()).collect(),
+                self.signature.clone().into_inner().iter().map(|x| StarkFelt::new((*x).into()).unwrap()).collect(),
             ),
             nonce: Nonce(StarkFelt::new(self.nonce.into())?),
-            contract_address: StarknetContractAddress::try_from(StarkFelt::new(self.sender_address)?)?,
+            contract_address: StarknetContractAddress::try_from(StarkFelt::new(self.sender_address.into())?)?,
             class_hash: entrypoint.class_hash.unwrap_or_default(),
             constructor_calldata: entrypoint.calldata,
             contract_address_salt: ContractAddressSalt(StarkFelt::new(
@@ -214,14 +213,14 @@ impl TryInto<L1HandlerTransaction> for &Transaction {
         let entrypoint: CallEntryPoint = self.call_entrypoint.clone().try_into()?;
 
         Ok(L1HandlerTransaction {
-            transaction_hash: TransactionHash(StarkFelt::new(self.hash.0)?),
+            transaction_hash: TransactionHash(StarkFelt::new(self.hash.into())?),
             version: TransactionVersion(StarkFelt::new(U256::from(self.version).into())?),
             nonce: Nonce(StarkFelt::new(self.nonce.into())?),
-            contract_address: StarknetContractAddress::try_from(StarkFelt::new(self.sender_address)?)?,
+            contract_address: StarknetContractAddress::try_from(StarkFelt::new(self.sender_address.into())?)?,
             calldata: entrypoint.calldata,
-            entry_point_selector: EntryPointSelector(StarkHash::new(
-                *self.call_entrypoint.entrypoint_selector.unwrap_or_default().as_fixed_bytes(),
-            )?),
+            entry_point_selector: EntryPointSelector(StarkHash::new(<[u8; 32]>::from(
+                self.call_entrypoint.entrypoint_selector.unwrap_or_default(),
+            ))?),
         })
     }
 }
@@ -234,13 +233,13 @@ impl TryInto<InvokeTransactionV1> for &Transaction {
         let entrypoint: CallEntryPoint = self.call_entrypoint.clone().try_into()?;
 
         Ok(InvokeTransactionV1 {
-            transaction_hash: TransactionHash(StarkFelt::new(self.hash.0)?),
+            transaction_hash: TransactionHash(StarkFelt::new(self.hash.into())?),
             max_fee: Fee(2),
             signature: TransactionSignature(
-                self.signature.clone().into_inner().iter().map(|x| StarkFelt::new(x.0).unwrap()).collect(),
+                self.signature.clone().into_inner().iter().map(|x| StarkFelt::new((*x).into()).unwrap()).collect(),
             ),
             nonce: Nonce(StarkFelt::new(self.nonce.into())?),
-            sender_address: StarknetContractAddress::try_from(StarkFelt::new(self.sender_address)?)?,
+            sender_address: StarknetContractAddress::try_from(StarkFelt::new(self.sender_address.into())?)?,
             calldata: entrypoint.calldata,
         })
     }
@@ -254,13 +253,13 @@ impl TryInto<DeclareTransaction> for &Transaction {
         let entrypoint: CallEntryPoint = self.call_entrypoint.clone().try_into()?;
 
         let tx = DeclareTransactionV0V1 {
-            transaction_hash: TransactionHash(StarkFelt::new(self.hash.0)?),
+            transaction_hash: TransactionHash(StarkFelt::new(self.hash.into())?),
             max_fee: Fee(2),
             signature: TransactionSignature(
-                self.signature.clone().into_inner().iter().map(|x| StarkFelt::new(x.0).unwrap()).collect(),
+                self.signature.clone().into_inner().iter().map(|x| StarkFelt::new((*x).into()).unwrap()).collect(),
             ),
             nonce: Nonce(StarkFelt::new(self.nonce.into())?),
-            sender_address: StarknetContractAddress::try_from(StarkFelt::new(self.sender_address)?)?,
+            sender_address: StarknetContractAddress::try_from(StarkFelt::new(self.sender_address.into())?)?,
             class_hash: entrypoint.class_hash.unwrap_or_default(),
         };
 
@@ -278,17 +277,19 @@ impl Transaction {
     /// Creates a new instance of a transaction.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
+        tx_type: TxType,
         version: u8,
-        hash: H256,
-        signature: BoundedVec<H256, MaxArraySize>,
+        hash: Felt252Wrapper,
+        signature: BoundedVec<Felt252Wrapper, MaxArraySize>,
         sender_address: ContractAddressWrapper,
-        nonce: U256,
+        nonce: Felt252Wrapper,
         call_entrypoint: CallEntryPointWrapper,
         contract_class: Option<ContractClassWrapper>,
         contract_address_salt: Option<U256>,
-        max_fee: U256,
+        max_fee: Felt252Wrapper,
     ) -> Self {
         Self {
+            tx_type,
             version,
             hash,
             signature,
@@ -302,7 +303,7 @@ impl Transaction {
     }
 
     /// Creates a new instance of a transaction without signature.
-    pub fn from_tx_hash(hash: H256) -> Self {
+    pub fn from_tx_hash(hash: Felt252Wrapper) -> Self {
         Self { hash, ..Self::default() }
     }
 
@@ -491,11 +492,7 @@ impl Transaction {
         contract_class: Option<ContractClass>,
         fee_token_address: ContractAddressWrapper,
     ) -> TransactionExecutionResultWrapper<TransactionExecutionInfoWrapper> {
-        // Create the block context.
-        // TODO: don't do that.
-        // FIXME: https://github.com/keep-starknet-strange/madara/issues/330
-        let block_context = BlockContext::try_serialize(block.header().clone(), fee_token_address)
-            .map_err(|_| TransactionExecutionErrorWrapper::BlockContextSerializationError)?;
+        let block_context = block.header().clone().into_block_context(fee_token_address);
 
         // Initialize the execution resources.
         let execution_resources = &mut ExecutionResources::default();
@@ -721,19 +718,18 @@ impl Transaction {
 
 impl Default for Transaction {
     fn default() -> Self {
-        let one = H256::from_slice(&[
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-        ]);
+        let one = Felt252Wrapper::ONE;
         Self {
+            tx_type: TxType::Invoke,
             version: 1_u8,
             hash: one,
             signature: BoundedVec::try_from(vec![one, one]).unwrap(),
-            nonce: U256::default(),
+            nonce: Felt252Wrapper::default(),
             sender_address: ContractAddressWrapper::default(),
             call_entrypoint: CallEntryPointWrapper::default(),
             contract_class: None,
             contract_address_salt: None,
-            max_fee: U256::from(u128::MAX),
+            max_fee: Felt252Wrapper::from(u128::MAX),
         }
     }
 }
@@ -741,10 +737,10 @@ impl Default for Transaction {
 impl Default for TransactionReceiptWrapper {
     fn default() -> Self {
         Self {
-            transaction_hash: H256::default(),
-            actual_fee: U256::default(),
+            transaction_hash: Felt252Wrapper::default(),
+            actual_fee: Felt252Wrapper::default(),
             tx_type: TxType::Invoke,
-            block_hash: U256::default(),
+            block_hash: Felt252Wrapper::default(),
             block_number: 0_u64,
             events: BoundedVec::try_from(vec![EventWrapper::default(), EventWrapper::default()]).unwrap(),
         }

@@ -1,8 +1,7 @@
 name: Check, Build & Tests
 
-# Controls when the action will run.
 on:
-  # Triggers the workflow on push or pull request events but only for the master branch
+  # Triggers the workflow on push or pull request events but only for the main branch
   push:
     branches: [main]
   pull_request:
@@ -13,16 +12,11 @@ on:
 
 jobs:
   lint:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, madara]
     steps:
       - uses: actions/checkout@v3
-      - name: Setup rust toolchain
-        run: rustup show
-      - name: Set-Up
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang llvm libudev-dev protobuf-compiler
-      - uses: Swatinem/rust-cache@v2
+        with:
+          clean: false
       - name: Format and clippy
         run: |
           cargo fmt --all -- --check
@@ -30,20 +24,13 @@ jobs:
           cargo clippy --tests -- -D warnings
 
   coverage:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, madara]
     steps:
       - uses: actions/checkout@v3
-      - name: Setup rust toolchain
-        run: rustup show
-      - name: Set-Up
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang llvm libudev-dev protobuf-compiler
-      - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
-      - uses: Swatinem/rust-cache@v2
+        with:
+          clean: false
       - name: Coverage
-        run: cargo llvm-cov --codecov --output-path codecov.json
+        run: cargo llvm-cov --codecov --no-clean --output-path codecov.json
       - name: Upload coverage to codecov.io
         uses: codecov/codecov-action@v3
         with:
@@ -52,11 +39,13 @@ jobs:
           fail_ci_if_error: true
 
   integration-tests:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, madara]
     env:
-      BINARY_PATH: ../target/debug/madara
+      BINARY_PATH: ../target/release/madara
     steps:
       - uses: actions/checkout@v3
+        with:
+          clean: false
       - uses: actions/setup-node@v3
         with:
           node-version: ">=20"
@@ -65,15 +54,8 @@ jobs:
       - name: Install
         run: |-
           cd tests
-          npm install
-      - name: Setup rust toolchain
-        run: rustup show
-      - name: Set-Up
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang llvm libudev-dev protobuf-compiler
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo build --workspace
+          npm clean-install
+      - run: cargo build --workspace --release
       - name: Run test
         run: |-
           cd tests

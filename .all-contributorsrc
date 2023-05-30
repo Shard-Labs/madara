@@ -252,6 +252,69 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "dbejarano820",
+      "name": "Daniel Bejarano",
+      "avatar_url": "https://avatars.githubusercontent.com/u/58019353?v=4",
+      "profile": "https://github.com/dbejarano820",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "sparqet",
+      "name": "sparqet",
+      "avatar_url": "https://avatars.githubusercontent.com/u/37338401?v=4",
+      "profile": "https://github.com/sparqet",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "robinstraub",
+      "name": "Robin Straub",
+      "avatar_url": "https://avatars.githubusercontent.com/u/17799181?v=4",
+      "profile": "https://github.com/robinstraub",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "edisontim",
+      "name": "tedison",
+      "avatar_url": "https://avatars.githubusercontent.com/u/76473430?v=4",
+      "profile": "https://github.com/edisontim",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "lana-shanghai",
+      "name": "lanaivina",
+      "avatar_url": "https://avatars.githubusercontent.com/u/31368580?v=4",
+      "profile": "https://github.com/lana-shanghai",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "d-roak",
+      "name": "Oak",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5263301?v=4",
+      "profile": "https://droak.sh/",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "rkdud007",
+      "name": "Pia",
+      "avatar_url": "https://avatars.githubusercontent.com/u/76558220?v=4",
+      "profile": "https://github.com/rkdud007",
+      "contributions": [
+        "code"
+      ]
     }
   ],
   "contributorsPerLine": 7,
