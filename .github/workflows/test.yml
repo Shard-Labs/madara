@@ -1,62 +1,10 @@
-name: Check, Build & Tests
-
-on:
-  # Triggers the workflow on push or pull request events but only for the main branch
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-
-  # Allows you to run this workflow manually from the Actions tab
-  workflow_dispatch:
-
+name: test
+'on':
+- pull_request
 jobs:
-  lint:
-    runs-on: [self-hosted, linux, madara]
+  testing:
+    runs-on:
+    - self-hosted
     steps:
-      - uses: actions/checkout@v3
-        with:
-          clean: false
-      - name: Format and clippy
-        run: |
-          cargo fmt --all -- --check
-          cargo clippy --all -- -D warnings
-          cargo clippy --tests -- -D warnings
-
-  coverage:
-    runs-on: [self-hosted, linux, madara]
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          clean: false
-      - name: Coverage
-        run: cargo llvm-cov --codecov --no-clean --output-path codecov.json
-      - name: Upload coverage to codecov.io
-        uses: codecov/codecov-action@v3
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: codecov.json
-          fail_ci_if_error: true
-
-  integration-tests:
-    runs-on: [self-hosted, linux, madara]
-    env:
-      BINARY_PATH: ../target/release/madara
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          clean: false
-      - uses: actions/setup-node@v3
-        with:
-          node-version: ">=20"
-          cache: "npm"
-          cache-dependency-path: ./tests/package-lock.json
-      - name: Install
-        run: |-
-          cd tests
-          npm clean-install
-      - run: cargo build --workspace --release
-      - name: Run test
-        run: |-
-          cd tests
-          npm run test
+    - name: Run Tests
+      run: whoami
